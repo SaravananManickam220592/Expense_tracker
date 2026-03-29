@@ -7,6 +7,7 @@ import { Category, CategoryInput, Expense, ExpenseFilters, ExpenseInput } from '
 type ExpenseContextValue = {
   categories: Category[];
   expenses: Expense[];
+  initializing: boolean;
   loading: boolean;
   error: string | null;
   refreshAll: () => Promise<void>;
@@ -28,6 +29,7 @@ type ProviderProps = {
 export const ExpenseProvider = ({ children }: ProviderProps) => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [initializing, setInitializing] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -96,6 +98,8 @@ export const ExpenseProvider = ({ children }: ProviderProps) => {
       } catch (contextError) {
         setError(contextError instanceof Error ? contextError.message : 'Database setup failed.');
         setLoading(false);
+      } finally {
+        setInitializing(false);
       }
     };
 
@@ -106,6 +110,7 @@ export const ExpenseProvider = ({ children }: ProviderProps) => {
     () => ({
       categories,
       expenses,
+      initializing,
       loading,
       error,
       refreshAll,
@@ -117,7 +122,7 @@ export const ExpenseProvider = ({ children }: ProviderProps) => {
       editExpense,
       removeExpense,
     }),
-    [categories, expenses, loading, error, refreshAll, loadExpenses, addCategory, editCategory, removeCategory, addExpense, editExpense, removeExpense],
+    [categories, expenses, initializing, loading, error, refreshAll, loadExpenses, addCategory, editCategory, removeCategory, addExpense, editExpense, removeExpense],
   );
 
   return <ExpenseContext.Provider value={value}>{children}</ExpenseContext.Provider>;
