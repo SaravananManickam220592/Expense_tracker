@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 
 import { Category, ExpenseInput } from '../utils/types';
+import { getCategoryIconGlyph } from '../utils/categoryAppearance';
 import { FormField } from './FormField';
 import { PrimaryButton } from './PrimaryButton';
 import { toInputDate } from '../utils/format';
@@ -17,7 +18,9 @@ type ExpenseFormProps = {
 export const ExpenseForm = ({ categories, initialValues, submitLabel, onSubmit }: ExpenseFormProps) => {
   const [title, setTitle] = useState(initialValues?.title || '');
   const [amount, setAmount] = useState(initialValues ? String(initialValues.amount) : '');
-  const [categoryId, setCategoryId] = useState<number | null>(initialValues?.category_id ?? null);
+  const [categoryId, setCategoryId] = useState<number | null>(
+    initialValues?.category_id != null ? Number(initialValues.category_id) : null,
+  );
   const [date, setDate] = useState(initialValues?.date || toInputDate());
   const [note, setNote] = useState(initialValues?.note || '');
   const [submitting, setSubmitting] = useState(false);
@@ -74,10 +77,17 @@ export const ExpenseForm = ({ categories, initialValues, submitLabel, onSubmit }
       <View style={styles.pickerWrap}>
         <Text style={styles.label}>Category</Text>
         <View style={styles.pickerContainer}>
-          <Picker selectedValue={categoryId ?? 'none'} onValueChange={(value) => setCategoryId(value === 'none' ? null : Number(value))}>
-            <Picker.Item label={hasCategories ? 'Uncategorized' : 'No categories yet'} value="none" />
+          <Picker selectedValue={categoryId != null ? String(categoryId) : 'none'} onValueChange={(value) => setCategoryId(value === 'none' ? null : Number(value))}>
+            <Picker.Item
+              label={hasCategories ? '🏷️ Uncategorized' : 'No categories yet'}
+              value="none"
+            />
             {pickerItems.map((category) => (
-              <Picker.Item key={category.id} label={category.name} value={category.id} />
+              <Picker.Item
+                key={category.id}
+                label={`${getCategoryIconGlyph(category.icon)} ${category.name}`}
+                value={String(category.id)}
+              />
             ))}
           </Picker>
         </View>

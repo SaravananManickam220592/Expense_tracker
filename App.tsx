@@ -4,8 +4,20 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 
+import { AppBootScreen } from './src/components/AppBootScreen';
 import { ExpenseProvider } from './src/context/ExpenseContext';
+import { useExpenseTracker } from './src/context/ExpenseContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
+
+const AppShell = () => {
+  const { initializing } = useExpenseTracker();
+
+  if (initializing) {
+    return <AppBootScreen />;
+  }
+
+  return <AppNavigator />;
+};
 
 export default function App() {
   return (
@@ -13,7 +25,7 @@ export default function App() {
       <SafeAreaProvider>
         <ExpenseProvider>
           <StatusBar style="dark" />
-          <AppNavigator />
+          <AppShell />
         </ExpenseProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

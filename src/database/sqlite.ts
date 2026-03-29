@@ -1,12 +1,89 @@
 import * as SQLite from 'expo-sqlite';
+import * as FileSystem from 'expo-file-system/legacy';
 
 import { Category, CategoryInput, Expense, ExpenseFilters, ExpenseInput } from '../utils/types';
 import { toInputDate } from '../utils/format';
 
-const databasePromise = SQLite.openDatabaseAsync('expense-tracker.db');
+const databasePromise = SQLite.openDatabaseAsync('expense-tracker.db', undefined, SQLite.defaultDatabaseDirectory);
+const backupFileUri = `${FileSystem.documentDirectory ?? ''}expense-tracker-backup.json`;
+
+type BackupPayload = {
+  categories: Category[];
+  expenses: Expense[];
+};
 
 const getDatabase = async () => {
   return databasePromise;
+};
+
+const readBackup = async (): Promise<BackupPayload | null> => {
+  if (!FileSystem.documentDirectory) {
+    return null;
+  }
+
+  const fileInfo = await FileSystem.getInfoAsync(backupFileUri);
+  if (!fileInfo.exists) {
+    return null;
+  }
+
+  const raw = await FileSystem.readAsStringAsync(backupFileUri);
+  if (!raw.trim()) {
+    return null;
+  }
+
+  const parsed = JSON.parse(raw) as BackupPayload;
+  return {
+    categories: parsed.categories || [],
+    expenses: parsed.expenses || [],
+  };
+};
+
+const writeBackup = async (database: SQLite.SQLiteDatabase) => {
+  if (!FileSystem.documentDirectory) {
+    return;
+  }
+
+  const categories = await database.getAllAsync<Category>('SELECT * FROM categories ORDER BY id ASC');
+  const expenses = await database.getAllAsync<Expense>(
+    'SELECT id, title, amount, category_id, date, note, created_at FROM expenses ORDER BY id ASC',
+  );
+
+  await FileSystem.writeAsStringAsync(
+    backupFileUri,
+    JSON.stringify({ categories, expenses }),
+    { encoding: FileSystem.EncodingType.UTF8 },
+  );
+};
+
+const restoreBackup = async (database: SQLite.SQLiteDatabase) => {
+  const backup = await readBackup();
+  if (!backup || (!backup.categories.length && !backup.expenses.length)) {
+    return false;
+  }
+
+  await database.execAsync('BEGIN TRANSACTION;');
+
+  try {
+    for (const category of backup.categories) {
+      await database.runAsync(
+        'INSERT INTO categories (id, name, color, icon) VALUES (?, ?, ?, ?)',
+        [category.id, category.name, category.color, category.icon],
+      );
+    }
+
+    for (const expense of backup.expenses) {
+      await database.runAsync(
+        'INSERT INTO expenses (id, title, amount, category_id, date, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [expense.id, expense.title, expense.amount, expense.category_id, expense.date, expense.note, expense.created_at],
+      );
+    }
+
+    await database.execAsync('COMMIT;');
+    return true;
+  } catch (error) {
+    await database.execAsync('ROLLBACK;');
+    throw error;
+  }
 };
 
 const seedCategories: CategoryInput[] = [
@@ -45,6 +122,7 @@ export const initDatabase = async () => {
 
   await database.execAsync(`
     PRAGMA foreign_keys = ON;
+    PRAGMA journal_mode = WAL;
 
     CREATE TABLE IF NOT EXISTS categories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,7 +144,15 @@ export const initDatabase = async () => {
   `);
 
   const categoryCount = await database.getFirstAsync<{ total: number }>('SELECT COUNT(*) AS total FROM categories');
-  if (!categoryCount || categoryCount.total === 0) {
+  const expenseCount = await database.getFirstAsync<{ total: number }>('SELECT COUNT(*) AS total FROM expenses');
+
+  if ((!categoryCount || categoryCount.total === 0) && (!expenseCount || expenseCount.total === 0)) {
+    const restored = await restoreBackup(database);
+    if (restored) {
+      await writeBackup(database);
+      return;
+    }
+
     for (const category of seedCategories) {
       await database.runAsync('INSERT INTO categories (name, color, icon) VALUES (?, ?, ?)', [
         category.name,
@@ -74,10 +160,7 @@ export const initDatabase = async () => {
         category.icon,
       ]);
     }
-  }
 
-  const expenseCount = await database.getFirstAsync<{ total: number }>('SELECT COUNT(*) AS total FROM expenses');
-  if (!expenseCount || expenseCount.total === 0) {
     for (const expense of seedExpenses) {
       await database.runAsync(
         'INSERT INTO expenses (title, amount, category_id, date, note, created_at) VALUES (?, ?, ?, ?, ?, ?)',
@@ -91,6 +174,8 @@ export const initDatabase = async () => {
         ],
       );
     }
+
+    await writeBackup(database);
   }
 };
 
@@ -101,6 +186,8 @@ export const insertCategory = async (category: CategoryInput) => {
     category.color,
     category.icon,
   ]);
+
+  await writeBackup(database);
 
   return Number(result.lastInsertRowId);
 };
@@ -113,12 +200,16 @@ export const updateCategory = async (id: number, category: CategoryInput) => {
     category.icon,
     id,
   ]);
+
+  await writeBackup(database);
 };
 
 export const deleteCategory = async (id: number) => {
   const database = await getDatabase();
   await database.runAsync('UPDATE expenses SET category_id = NULL WHERE category_id = ?', [id]);
   await database.runAsync('DELETE FROM categories WHERE id = ?', [id]);
+
+  await writeBackup(database);
 };
 
 export const getCategories = async () => {
@@ -134,6 +225,8 @@ export const insertExpense = async (expense: ExpenseInput) => {
     [expense.title, expense.amount, expense.category_id, expense.date, expense.note, new Date().toISOString()],
   );
 
+  await writeBackup(database);
+
   return Number(result.lastInsertRowId);
 };
 
@@ -143,11 +236,15 @@ export const updateExpense = async (id: number, expense: ExpenseInput) => {
     'UPDATE expenses SET title = ?, amount = ?, category_id = ?, date = ?, note = ? WHERE id = ?',
     [expense.title, expense.amount, expense.category_id, expense.date, expense.note, id],
   );
+
+  await writeBackup(database);
 };
 
 export const deleteExpense = async (id: number) => {
   const database = await getDatabase();
   await database.runAsync('DELETE FROM expenses WHERE id = ?', [id]);
+
+  await writeBackup(database);
 };
 
 export const getExpenses = async (filters: ExpenseFilters = {}) => {

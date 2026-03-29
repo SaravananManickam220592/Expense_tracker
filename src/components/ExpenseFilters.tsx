@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 
 import { Category, ExpenseFilters as ExpenseFiltersType } from '../utils/types';
+import { getCategoryIconGlyph } from '../utils/categoryAppearance';
 import { FormField } from './FormField';
 import { PrimaryButton } from './PrimaryButton';
 
@@ -27,12 +28,16 @@ export const ExpenseFilters = ({ categories, values, onChange, onReset }: Expens
         <Text style={styles.label}>Category</Text>
         <View style={styles.pickerContainer}>
           <Picker
-            selectedValue={typeof values.categoryId === 'number' ? values.categoryId : 'all'}
+            selectedValue={typeof values.categoryId === 'number' ? String(values.categoryId) : 'all'}
             onValueChange={(categoryId) => onChange({ ...values, categoryId: categoryId === 'all' ? null : Number(categoryId) })}
           >
             <Picker.Item label="All categories" value="all" />
             {categories.map((category) => (
-              <Picker.Item key={category.id} label={category.name} value={category.id} />
+              <Picker.Item
+                key={category.id}
+                label={`${getCategoryIconGlyph(category.icon)} ${category.name}`}
+                value={String(category.id)}
+              />
             ))}
           </Picker>
         </View>
